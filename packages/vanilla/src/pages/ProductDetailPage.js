@@ -1,6 +1,6 @@
-import { productStore } from "../stores";
-import { loadProductDetailForPage } from "../services";
 import { router, withLifecycle } from "../router";
+import { loadProductDetailForPage } from "../services";
+import { productStore } from "../stores";
 import { PageWrapper } from "./PageWrapper.js";
 
 const loadingContent = `
@@ -237,6 +237,19 @@ function ProductDetail({ product, relatedProducts = [] }) {
 export const ProductDetailPage = withLifecycle(
   {
     onMount: () => {
+      if (typeof window === "undefined") {
+        console.log("이 코드는 서버에서 실행이 되고 ");
+        return;
+      }
+
+      // SSR에서 발생한 hydration이 있으면 로딩 건너뛰기
+      const currentState = productStore.getState();
+      if (currentState.currentProduct?.productId === router.params.id && currentState.status === "done") {
+        console.log("✅ 이미 SSR 데이터가 로드되어 있음");
+        return;
+      }
+
+      console.log("🔄 CSR로 데이터 로딩 시작");
       loadProductDetailForPage(router.params.id);
     },
     watches: [() => [router.params.id], () => loadProductDetailForPage(router.params.id)],
