@@ -1,130 +1,95 @@
+import { createObserver } from "./createObserver.js";
+
 /**
  * 기본 라우터 - 공통 기능을 제공하는 추상 클래스
  */
-import { createObserver } from "./createObserver.js";
-
 export class BaseRouter {
-  #routes;
-  #route;
+  #routes = new Map();
+  #route = null;
   #observer = createObserver();
   #baseUrl;
 
   constructor(baseUrl = "") {
-    this.#routes = new Map();
-    this.#route = null;
     this.#baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  // 게터들 - 외부에서 내부 상태 접근
   get baseUrl() {
     return this.#baseUrl;
   }
-
   get params() {
     return this.#route?.params ?? {};
-  }
-
+  } // URL 파라미터 (예: {id: "123"})
   get route() {
     return this.#route;
-  }
-
-  get routes() {
-    return this.#routes;
-  }
-
+  } // 현재 라우트 정보
   get target() {
     return this.#route?.handler;
-  }
+  } // 현재 라우트 핸들러
 
+  // 라우트 변경 구독
   subscribe(fn) {
     this.#observer.subscribe(fn);
   }
 
   /**
-   * 라우트 등록 - 개발/프로덕션 환경 모두 지원
-   * @param {string} path - 경로 패턴 (예: "/product/:id")
-   * @param {Function} handler - 라우트 핸들러
+   * 라우트 등록 (예: "/product/:id" -> 정규식으로 변환)
    */
   addRoute(path, handler) {
     const paramNames = [];
+
+    // ":id" 같은 파라미터를 정규식 그룹으로 변환
     const regexPath = path
       .replace(/:\w+/g, (match) => {
-        paramNames.push(match.slice(1));
-        return "([^/]+)";
+        paramNames.push(match.slice(1)); // ":"제거하고 파라미터명 저장
+        return "([^/]+)"; // 슬래시 제외한 모든 문자 매칭
       })
-      .replace(/\//g, "\\/");
-
-    // 여러 패턴을 만들어서 다양한 환경 지원
-    const patterns = [];
-
-    // 1. 기본 패턴 (개발 환경)
-    patterns.push(new RegExp(`^${regexPath}$`));
-
-    // 2. baseUrl이 있는 경우 (프로덕션 환경)
-    if (this.#baseUrl && this.#baseUrl !== "" && this.#baseUrl !== "/") {
-      patterns.push(new RegExp(`^${this.#baseUrl.replace(/\//g, "\\/")}${regexPath}$`));
-    }
-
-    // 3. 후행 슬래시 변형들
-    if (regexPath !== "" && !regexPath.endsWith("\\/")) {
-      patterns.push(new RegExp(`^${regexPath}\\/$`));
-      if (this.#baseUrl && this.#baseUrl !== "" && this.#baseUrl !== "/") {
-        patterns.push(new RegExp(`^${this.#baseUrl.replace(/\//g, "\\/")}${regexPath}\\/$`));
-      }
-    }
-
-    console.log(
-      `🔄 라우트 등록: ${path} -> baseUrl: "${this.#baseUrl}" -> patterns:`,
-      patterns.map((p) => p.toString()),
-    );
+      .replace(/\//g, "\\/"); // 슬래시 이스케이프
 
     this.#routes.set(path, {
-      patterns,
+      regex: new RegExp(`^${regexPath}$`),
       paramNames,
       handler,
     });
   }
 
+  /**
+   * URL과 매칭되는 라우트 찾기
+   */
   findRoute(url) {
-    console.log("🔍 findRoute 시작 - url:", url, "baseUrl:", this.#baseUrl);
-
     try {
-      const { pathname } = new URL(url, this.getOrigin());
-      console.log("🔍 URL 파싱 성공 - pathname:", pathname);
+      const { pathname } = new URL(url || "/", this.getOrigin());
+      // baseUrl이 있으면 pathname에서 제거
+      const normalizedPath = this.#baseUrl ? pathname.replace(this.#baseUrl, "") || "/" : pathname;
 
+      // 등록된 라우트들과 매칭 시도
       for (const [routePath, route] of this.#routes) {
-        console.log("🔍 라우트 매칭 시도 - routePath:", routePath);
+        const match = normalizedPath.match(route.regex);
+        if (match) {
+          // 파라미터 값들 추출
+          const params = {};
+          route.paramNames.forEach((name, index) => {
+            params[name] = match[index + 1]; // 첫 번째 그룹부터 파라미터
+          });
 
-        for (const pattern of route.patterns) {
-          const match = pathname.match(pattern);
-          if (match) {
-            console.log("✅ 라우트 매칭 성공:", routePath, "with pattern:", pattern.toString());
-            const params = {};
-            route.paramNames.forEach((name, index) => {
-              params[name] = match[index + 1];
-            });
-
-            return {
-              ...route,
-              params,
-              path: routePath,
-            };
-          }
+          return { ...route, params, path: routePath };
         }
       }
-      console.log("❌ 매칭되는 라우트 없음");
-      return null;
-    } catch (error) {
-      console.error("❌ findRoute 오류:", error);
-      return null;
+      return null; // 매칭되는 라우트 없음
+    } catch {
+      return null; // URL 파싱 실패
     }
   }
 
+  /**
+   * 라우트 업데이트하고 구독자들에게 알림
+   */
   updateRoute(url) {
     this.#route = this.findRoute(url);
     this.#observer.notify();
   }
 
-  // 추상 메서드들 - 하위 클래스에서 구현 필요
+  // 추상 메서드들 - 하위 클래스에서 반드시 구현
   getCurrentUrl() {
     throw new Error("getCurrentUrl must be implemented by subclass");
   }
@@ -134,41 +99,40 @@ export class BaseRouter {
   }
 
   /**
-   * 쿼리 파라미터를 객체로 파싱
+   * 쿼리 스트링을 객체로 변환 (?a=1&b=2 -> {a:'1', b:'2'})
    */
   static parseQuery(search) {
-    const params = new URLSearchParams(search);
-    const query = {};
-    for (const [key, value] of params) {
-      query[key] = value;
-    }
-    return query;
+    return Object.fromEntries(new URLSearchParams(search));
   }
 
   /**
-   * 객체를 쿼리 문자열로 변환
+   * 객체를 쿼리 스트링으로 변환 ({a:'1', b:'2'} -> "a=1&b=2")
    */
   static stringifyQuery(query) {
     const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) {
-      if (value !== null && value !== undefined && value !== "") {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value != null && value !== "") {
+        // null, undefined, 빈값 제외
         params.set(key, String(value));
       }
-    }
+    });
     return params.toString();
   }
 
+  /**
+   * 새 쿼리와 기존 쿼리를 병합해서 완전한 URL 생성
+   */
   static getUrl(newQuery, baseUrl = "", pathname = "", search = "") {
-    const currentQuery = BaseRouter.parseQuery(search);
-    const updatedQuery = { ...currentQuery, ...newQuery };
+    const updatedQuery = { ...this.parseQuery(search), ...newQuery };
 
+    // null, undefined, 빈값 제거
     Object.keys(updatedQuery).forEach((key) => {
-      if (updatedQuery[key] === null || updatedQuery[key] === undefined || updatedQuery[key] === "") {
+      if (updatedQuery[key] == null || updatedQuery[key] === "") {
         delete updatedQuery[key];
       }
     });
 
-    const queryString = BaseRouter.stringifyQuery(updatedQuery);
+    const queryString = this.stringifyQuery(updatedQuery);
     return `${baseUrl}${pathname.replace(baseUrl, "")}${queryString ? `?${queryString}` : ""}`;
   }
 }

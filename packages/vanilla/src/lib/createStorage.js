@@ -1,12 +1,11 @@
-const serverStorage = () => {
-  return typeof window !== "undefined"
+const serverStorage =
+  typeof window !== "undefined"
     ? window.localStorage
     : {
         getItem: () => null,
         setItem: () => {},
         removeItem: () => {},
       };
-};
 
 /**
  * 로컬스토리지 추상화 함수
@@ -14,7 +13,7 @@ const serverStorage = () => {
  * @param {Storage} storage - 기본값은 localStorage
  * @returns {Object} { get, set, reset }
  */
-export const createStorage = (key, storage = serverStorage()) => {
+export const createStorage = (key, storage = serverStorage) => {
   const get = () => {
     try {
       const item = storage.getItem(key);

@@ -1,22 +1,17 @@
+import compression from "compression";
 import express from "express";
 import fs from "node:fs/promises";
-import { mockServer } from "./src/mocks/mockServer.js";
+import sirv from "sirv";
 
-// 환경 변수 및 상수 설정
 const isProduction = process.env.NODE_ENV === "production";
 const port = process.env.PORT || 5173; // SSR 포트
 const base = process.env.BASE || (isProduction ? "/front_6th_chapter4-1/vanilla/" : "/");
 
-// Express 앱 생성
 const app = express();
-
-mockServer.listen({
-  onUnhandledRequest: "bypass",
-});
 
 // HTML 템플릿
 let template;
-// SSR 함수: 컴포넌트를 HTML로 변환
+
 let render;
 // 개발 서버 인스턴스
 let vite;
@@ -33,8 +28,6 @@ if (!isProduction) {
   app.use(vite.middlewares);
 } else {
   // 빌드된 파일들을 gzip 압축으로 전송 (성능 최적화)
-  const compression = (await import("compression")).default;
-  const sirv = (await import("sirv")).default;
   app.use(compression());
   app.use(base, sirv("./dist/vanilla", { extensions: [] }));
 
@@ -42,30 +35,31 @@ if (!isProduction) {
   template = await fs.readFile("./dist/vanilla/index.html", "utf-8");
   render = (await import("./dist/vanilla-ssr/main-server.js")).render;
 }
-
-// SSR 렌더링 미들웨어
-app.get(/^(?!.*\/api).*$/, async (req, res) => {
+// SSR 렌더링 미들웨어 - API 경로 제외한 모든 요청 처리
+app.use(/^(?!.*\/api).*$/, async (req, res) => {
   try {
-    // URL에서 베이스 경로 제거 (정규화)
-    const url = req.originalUrl.replace(base, "");
+    const url = normalizeUrl(req.originalUrl, base);
 
+    // 개발 환경에서만 매 요청마다 최신 모듈 로드 (HMR 지원)
     if (!isProduction) {
-      // 개발 환경: 매 요청마다 최신 템플릿과 렌더 함수 로드
       template = await fs.readFile("./index.html", "utf-8");
       template = await vite.transformIndexHtml(url, template);
       render = (await vite.ssrLoadModule("/src/main-server.js")).render;
     }
-    //React 컴포넌트를 HTML로 변환
+
+    // SSR 렌더링
     const rendered = await render(url, req.query);
 
-    //window.__INITIAL_DATA__로 클라이언트에 초기 데이터 전달 (Hydration용)
-    console.log("rendered.initialData", rendered.initialData);
+    // 클라이언트 하이드레이션용 초기 데이터 스크립트 생성
+    const initialDataScript = rendered.initialData
+      ? `<script>window.__INITIAL_DATA__ = ${JSON.stringify(rendered.initialData)}</script>`
+      : "";
 
-    // 템플릿의 플레이스홀더를 실제 컨텐츠로 교체
+    // 렌더링 결과를 HTML 템플릿에 주입
     const html = template
       .replace("<!--app-head-->", rendered.head ?? "")
-      .replace(`<!--app-data-->`, `<script>window.__INITIAL_DATA__ = ${rendered.initialData}</script>`)
-      .replace("<!--app-html-->", rendered.html ?? "");
+      .replace("<!--app-html-->", rendered.html ?? "")
+      .replace("</head>", `${initialDataScript}</head>`);
 
     res.status(200).set({ "Content-Type": "text/html" }).send(html);
   } catch (error) {
@@ -74,12 +68,18 @@ app.get(/^(?!.*\/api).*$/, async (req, res) => {
       vite.ssrFixStacktrace(error);
     }
 
-    console.error("❌ SSR 에러:", error.stack);
+    console.error("SSR 렌더링 에러:", error.message);
     res.status(500).end(error.stack);
   }
 });
-
 // HTTP 서버 시작
 app.listen(port, () => {
   console.log(`🌐 SSR 서버가 http://localhost:${port} 에서 실행 중입니다`);
 });
+
+// URL 정규화 함수
+function normalizeUrl(originalUrl, basePath) {
+  const withoutBase = originalUrl.replace(basePath, "") || "/";
+  const withSlash = withoutBase.startsWith("/") ? withoutBase : "/" + withoutBase;
+  return withSlash.replace(/\/+/g, "/");
+}

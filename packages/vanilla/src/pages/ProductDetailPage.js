@@ -1,6 +1,6 @@
 import { router, withLifecycle } from "../router";
-import { loadProductDetailForPage } from "../services";
-import { productStore } from "../stores";
+import { loadProductDetailForPage, loadRelatedProducts } from "../services";
+import { PRODUCT_ACTIONS, productStore } from "../stores";
 import { PageWrapper } from "./PageWrapper.js";
 
 const loadingContent = `
@@ -35,6 +35,16 @@ const ErrorContent = ({ error }) => `
 `;
 
 function ProductDetail({ product, relatedProducts = [] }) {
+  if (!product) {
+    return `
+      <div class="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div class="text-center">
+          <p class="text-gray-600">상품 정보를 불러오는 중...</p>
+        </div>
+      </div>
+    `;
+  }
+
   const {
     productId,
     title,
@@ -242,20 +252,52 @@ export const ProductDetailPage = withLifecycle(
         return;
       }
 
-      // SSR에서 발생한 hydration이 있으면 로딩 건너뛰기
-      const currentState = productStore.getState();
-      if (currentState.currentProduct?.productId === router.params.id && currentState.status === "done") {
-        console.log("✅ 이미 SSR 데이터가 로드되어 있음");
+      // __INITIAL_DATA__에서 상품 정보가 있다면 store에 설정
+      if (window.__INITIAL_DATA__?.product) {
+        console.log("이 코드는 클라이언트에서 실행이 되는데, __INITIAL_DATA__의 상품 정보가 있을 때!");
+        const { product } = window.__INITIAL_DATA__;
+        productStore.dispatch({
+          type: PRODUCT_ACTIONS.SET_CURRENT_PRODUCT,
+          payload: product,
+        });
+
+        // 관련 상품도 로드
+        if (product.category2) {
+          loadRelatedProducts(product.category2, product.productId);
+        }
         return;
       }
 
-      console.log("🔄 CSR로 데이터 로딩 시작");
+      console.log("이 코드는 __INITIAL_DATA__가 없을 때!");
       loadProductDetailForPage(router.params.id);
     },
-    watches: [() => [router.params.id], () => loadProductDetailForPage(router.params.id)],
+    watches: [
+      () => [router.params.id],
+      () => {
+        // 서버사이드에서는 watches 실행하지 않음
+        if (typeof window === "undefined") {
+          return;
+        }
+
+        // __INITIAL_DATA__가 있다면 watches에서도 체크
+        if (window.__INITIAL_DATA__?.product?.productId === router.params.id) {
+          return;
+        }
+        loadProductDetailForPage(router.params.id);
+      },
+    ],
   },
-  () => {
-    const { currentProduct: product, relatedProducts = [], error, loading } = productStore.getState();
+  (props = {}) => {
+    // SSR에서 props로 받은 product 또는 store의 currentProduct 사용
+    const productState = productStore.getState();
+    const product = props.product || productState.currentProduct;
+
+    // SSR에서 props로 받은 relatedProducts 또는 store의 relatedProducts 사용
+    const relatedProducts = props.relatedProducts || productState.relatedProducts || [];
+    const { error } = productState;
+
+    // SSR에서 props로 product가 전달되면 loading 상태 무시
+    const loading = props.product ? false : productState.loading;
 
     return PageWrapper({
       headerLeft: `
