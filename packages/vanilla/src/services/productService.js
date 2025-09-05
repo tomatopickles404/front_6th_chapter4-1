@@ -1,4 +1,4 @@
-import { getCategories, getProduct, getProducts } from "../api/productApis";
+import { getCategories, getProduct, getProducts } from "../api";
 import { initialProductState, productStore, PRODUCT_ACTIONS } from "../stores";
 import { router } from "../router";
 
