@@ -1,3 +1,6 @@
+import { getProductsOnServer, getUniqueCategories } from "../mocks/server.js";
+import items from "../mocks/items.json" with { type: "json" };
+
 export class ClientProductApi {
   async getProducts(params) {
     const searchParams = this.buildSearchParams(params);
@@ -29,10 +32,6 @@ export class ClientProductApi {
     });
   }
 }
-
-// api/server/productApi.js
-import { getProductsOnServer, getUniqueCategories } from "../../mocks/server.js";
-import items from "../../mocks/items.json" with { type: "json" };
 
 export class ServerProductApi {
   async getProducts(params) {
