@@ -26,7 +26,15 @@ const unregisterScrollHandler = () => {
   scrollHandlerRegistered = false;
 };
 
-export const HomePage = () => {
+interface HomePageProps {
+  searchQuery?: string;
+  limit?: string;
+  sort?: string;
+  category1?: string;
+  category2?: string;
+}
+
+export const HomePage = ({ searchQuery, limit, sort, category1, category2 }: HomePageProps = {}) => {
   useEffect(() => {
     registerScrollHandler();
     loadProductsAndCategories();
@@ -37,7 +45,13 @@ export const HomePage = () => {
   return (
     <PageWrapper headerLeft={headerLeft}>
       {/* 검색 및 필터 */}
-      <SearchBar />
+      <SearchBar
+        initialSearchQuery={searchQuery}
+        initialLimit={limit}
+        initialSort={sort}
+        initialCategory1={category1}
+        initialCategory2={category2}
+      />
 
       {/* 상품 목록 */}
       <div className="mb-6">

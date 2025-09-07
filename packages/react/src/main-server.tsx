@@ -52,12 +52,54 @@ function getRelatedProducts(category2: string, productId: string): Product[] {
   return items.filter((p: Product) => p.category2 === category2 && p.productId !== productId).slice(0, 4);
 }
 
+// 상품 검색 및 필터링 함수
+function filterProducts(products: Product[], query: Record<string, string>): Product[] {
+  let filtered = [...products];
+
+  // 검색어 필터링
+  if (query.search) {
+    const searchTerm = query.search.toLowerCase();
+    filtered = filtered.filter(
+      (item) => item.title.toLowerCase().includes(searchTerm) || item.brand.toLowerCase().includes(searchTerm),
+    );
+  }
+
+  // 카테고리 필터링
+  if (query.category1) {
+    filtered = filtered.filter((item) => item.category1 === query.category1);
+  }
+  if (query.category2) {
+    filtered = filtered.filter((item) => item.category2 === query.category2);
+  }
+
+  // 정렬 - 기본값을 price_asc로 변경
+  const sort = query.sort || "price_asc";
+  switch (sort) {
+    case "price_asc":
+      filtered.sort((a, b) => parseInt(a.lprice) - parseInt(b.lprice));
+      break;
+    case "price_desc":
+      filtered.sort((a, b) => parseInt(b.lprice) - parseInt(a.lprice));
+      break;
+    case "name_asc":
+      filtered.sort((a, b) => a.title.localeCompare(b.title, "ko"));
+      break;
+    case "name_desc":
+      filtered.sort((a, b) => b.title.localeCompare(a.title, "ko"));
+      break;
+    default:
+      // 기본은 가격 낮은 순
+      filtered.sort((a, b) => parseInt(a.lprice) - parseInt(b.lprice));
+  }
+
+  return filtered;
+}
+
 /**
  * 홈페이지 라우트 - 상품 목록과 카테고리 표시
  */
 router.addRoute("/", () => {
   const categories = getUniqueCategories();
-  // 라우터에서 쿼리를 가져와서 사용
   const currentQuery = (router as { query: Record<string, string> }).query || {};
   const filteredProducts = filterProducts(items, currentQuery);
   const limit = 20;
@@ -111,133 +153,108 @@ router.addRoute("/product/:id/", (params: RouteParams) => {
  */
 router.addRoute(".*", () => renderToString(createElement(NotFoundPage)));
 
-// 상품 검색 및 필터링 함수
-function filterProducts(products: Product[], query: Record<string, string>): Product[] {
-  let filtered = [...products];
-
-  // 검색어 필터링
-  if (query.search) {
-    const searchTerm = query.search.toLowerCase();
-    filtered = filtered.filter(
-      (item) => item.title.toLowerCase().includes(searchTerm) || item.brand.toLowerCase().includes(searchTerm),
-    );
-  }
-
-  // 카테고리 필터링
-  if (query.category1) {
-    filtered = filtered.filter((item) => item.category1 === query.category1);
-  }
-  if (query.category2) {
-    filtered = filtered.filter((item) => item.category2 === query.category2);
-  }
-
-  // 정렬 - 기본값을 price_asc로 변경
-  const sort = query.sort || "price_asc";
-  switch (sort) {
-    case "price_asc":
-      filtered.sort((a, b) => parseInt(a.lprice) - parseInt(b.lprice));
-      break;
-    case "price_desc":
-      filtered.sort((a, b) => parseInt(b.lprice) - parseInt(a.lprice));
-      break;
-    case "name_asc":
-      filtered.sort((a, b) => a.title.localeCompare(b.title, "ko"));
-      break;
-    case "name_desc":
-      filtered.sort((a, b) => b.title.localeCompare(a.title, "ko"));
-      break;
-    default:
-      // 기본은 가격 낮은 순
-      filtered.sort((a, b) => parseInt(a.lprice) - parseInt(b.lprice));
-  }
-
-  return filtered;
-}
-
 export const render = async (
   url: string,
   query: Record<string, string>,
 ): Promise<RenderResult & { __INITIAL_DATA__?: unknown }> => {
   try {
-    // 직접 URL 매칭으로 컴포넌트 렌더링
-    let html: string;
+    // URL 정규화
+    const normalizedUrl = url === "" ? "/" : url;
 
-    if (url === "/" || url === "") {
+    const pathOnly = normalizedUrl.split("?")[0];
+    if (pathOnly === "/" || pathOnly === "") {
       // 홈페이지
       const categories = getUniqueCategories();
-      const filteredProducts = filterProducts(items, query);
-      const limit = 20;
-      const paginatedProducts = filteredProducts.slice(0, limit);
 
-      // SSR에서 store 초기화
-      productStore.dispatch({
-        type: "products/setup",
-        payload: {
-          products: paginatedProducts,
-          categories,
-          totalCount: filteredProducts.length,
-        },
-      });
-
-      html = renderToString(createElement(HomePage));
-    } else if (url.startsWith("/product/")) {
-      // 상품 상세 페이지
-      const productId = url.split("/")[2];
-      const product = getProductById(productId);
-
-      if (!product) {
-        html = renderToString(createElement(NotFoundPage));
-      } else {
-        html = renderToString(createElement(ProductDetailPage));
+      // 쿼리 파라미터 처리 (URL 디코딩 포함)
+      const processedQuery = { ...query };
+      if (processedQuery.search) {
+        processedQuery.search = decodeURIComponent(processedQuery.search);
       }
-    } else {
-      // 404 페이지
-      html = renderToString(createElement(NotFoundPage));
-    }
+      if (processedQuery.category1) {
+        processedQuery.category1 = decodeURIComponent(processedQuery.category1);
+      }
+      if (processedQuery.category2) {
+        processedQuery.category2 = decodeURIComponent(processedQuery.category2);
+      }
 
-    // 초기 데이터 설정
-    let initialData: unknown = {};
-    if (url === "/" || url === "") {
-      const categories = getUniqueCategories();
-      const filteredProducts = filterProducts(items, query);
-      const limit = 20;
+      const filteredProducts = filterProducts(items, processedQuery);
+      const limit = parseInt(processedQuery.limit || "20", 10);
       const paginatedProducts = filteredProducts.slice(0, limit);
-      initialData = {
+
+      // 서버 상태 초기화
+      const productData: ProductData = {
         products: paginatedProducts,
         categories,
         totalCount: filteredProducts.length,
       };
-    } else if (url.startsWith("/product/")) {
-      const productId = url.split("/")[2];
+
+      // 스토어에 초기 데이터 설정
+      productStore.dispatch({
+        type: "products/setup",
+        payload: productData,
+      });
+
+      console.log("✅ React SSR 완료:", normalizedUrl);
+      return {
+        html: renderToString(
+          createElement(HomePage, {
+            searchQuery: processedQuery.search,
+            limit: processedQuery.limit,
+            sort: processedQuery.sort,
+            category1: processedQuery.category1,
+            category2: processedQuery.category2,
+          }),
+        ),
+        head: "<title>쇼핑몰 - 홈</title>",
+        initialData: productData,
+        __INITIAL_DATA__: productData,
+      };
+    } else if (pathOnly.startsWith("/product/")) {
+      // 상품 상세 페이지
+      const productId = pathOnly.split("/")[2];
       const product = getProductById(productId);
-      if (product) {
-        const relatedProducts = getRelatedProducts(product.category2, product.productId);
-        initialData = {
-          currentProduct: product,
-          relatedProducts,
+
+      if (!product) {
+        console.log("✅ React SSR 완료:", normalizedUrl);
+        return {
+          html: renderToString(createElement(NotFoundPage)),
+          head: "<title>페이지 없음 - 쇼핑몰</title>",
+          initialData: {},
+          __INITIAL_DATA__: {},
         };
       }
-    }
 
-    // 헤드 태그 설정
-    let head = "<title>쇼핑몰</title>";
-    if (url === "/" || url === "") {
-      head = "<title>쇼핑몰 - 홈</title>";
-    } else if (url.startsWith("/product/")) {
-      const productId = url.split("/")[2];
-      const product = getProductById(productId);
-      if (product) {
-        head = `<title>${product.title} - 쇼핑몰</title>`;
-      }
-    }
+      const relatedProducts = getRelatedProducts(product.category2, product.productId);
 
-    console.log("✅ React SSR 완료:", url);
-    return {
-      html: html as string,
-      head,
-      initialData: initialData as ProductData | ProductDetailData | Record<string, never>,
-      __INITIAL_DATA__: initialData,
-    };
+      // 서버 상태 초기화
+      const productDetailData: ProductDetailData = {
+        currentProduct: product,
+        relatedProducts,
+      };
+
+      productStore.dispatch({
+        type: "products/setup",
+        payload: productDetailData,
+      });
+
+      console.log("✅ React SSR 완료:", normalizedUrl);
+      return {
+        html: renderToString(createElement(ProductDetailPage)),
+        head: `<title>${product.title} - 쇼핑몰</title>`,
+        initialData: productDetailData,
+        __INITIAL_DATA__: productDetailData,
+      };
+    } else {
+      // 404 페이지
+      console.log("✅ React SSR 완료:", normalizedUrl);
+      return {
+        html: renderToString(createElement(NotFoundPage)),
+        head: "<title>페이지 없음 - 쇼핑몰</title>",
+        initialData: {},
+        __INITIAL_DATA__: {},
+      };
+    }
   } catch (error) {
     console.error("❌ React SSR 에러:", error);
     console.error("📍 에러 스택:", error instanceof Error ? error.stack : "No stack trace");
@@ -246,7 +263,7 @@ export const render = async (
     // 에러 발생 시 기본 에러 페이지 반환
     return {
       head: "<title>에러 - 쇼핑몰</title>",
-      html: renderToString(createElement(NotFoundPage)),
+      html: "<div>서버 오류가 발생했습니다.</div>",
       initialData: {},
       __INITIAL_DATA__: { error: error instanceof Error ? error.message : String(error) },
     };
