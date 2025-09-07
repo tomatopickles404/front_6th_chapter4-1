@@ -14,14 +14,14 @@ const headerLeft = (
 let scrollHandlerRegistered = false;
 
 const registerScrollHandler = () => {
-  if (scrollHandlerRegistered) return;
+  if (scrollHandlerRegistered || typeof window === "undefined") return;
 
   window.addEventListener("scroll", loadNextProducts);
   scrollHandlerRegistered = true;
 };
 
 const unregisterScrollHandler = () => {
-  if (!scrollHandlerRegistered) return;
+  if (!scrollHandlerRegistered || typeof window === "undefined") return;
   window.removeEventListener("scroll", loadNextProducts);
   scrollHandlerRegistered = false;
 };

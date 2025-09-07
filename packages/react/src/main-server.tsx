@@ -57,7 +57,9 @@ function getRelatedProducts(category2: string, productId: string): Product[] {
  */
 router.addRoute("/", () => {
   const categories = getUniqueCategories();
-  const filteredProducts = filterProducts(items, {});
+  // 라우터에서 쿼리를 가져와서 사용
+  const currentQuery = (router as { query: Record<string, string> }).query || {};
+  const filteredProducts = filterProducts(items, currentQuery);
   const limit = 20;
   const paginatedProducts = filteredProducts.slice(0, limit);
 
@@ -157,26 +159,47 @@ export const render = async (
   query: Record<string, string>,
 ): Promise<RenderResult & { __INITIAL_DATA__?: unknown }> => {
   try {
-    // 라우터 설정 및 시작
-    if ("setUrl" in router) {
-      (router as { setUrl: (url: string, base: string) => void }).setUrl(url, "http://localhost");
-    }
-    (router as { query: Record<string, string> }).query = query;
-    router.start();
+    // 직접 URL 매칭으로 컴포넌트 렌더링
+    let html: string;
 
-    // 라우트 찾기 및 핸들러 실행
-    const routeInfo = router.findRoute(url);
-    if (!routeInfo) {
-      throw new Error(`Route not found for URL: ${url}`);
-    }
+    if (url === "/" || url === "") {
+      // 홈페이지
+      const categories = getUniqueCategories();
+      const filteredProducts = filterProducts(items, query);
+      const limit = 20;
+      const paginatedProducts = filteredProducts.slice(0, limit);
 
-    const html = await routeInfo.handler(routeInfo.params);
+      // SSR에서 store 초기화
+      productStore.dispatch({
+        type: "products/setup",
+        payload: {
+          products: paginatedProducts,
+          categories,
+          totalCount: filteredProducts.length,
+        },
+      });
+
+      html = renderToString(createElement(HomePage));
+    } else if (url.startsWith("/product/")) {
+      // 상품 상세 페이지
+      const productId = url.split("/")[2];
+      const product = getProductById(productId);
+
+      if (!product) {
+        html = renderToString(createElement(NotFoundPage));
+      } else {
+        html = renderToString(createElement(ProductDetailPage));
+      }
+    } else {
+      // 404 페이지
+      html = renderToString(createElement(NotFoundPage));
+    }
 
     // 초기 데이터 설정
     let initialData: unknown = {};
     if (url === "/" || url === "") {
       const categories = getUniqueCategories();
-      const filteredProducts = filterProducts(items, {});
+      const filteredProducts = filterProducts(items, query);
       const limit = 20;
       const paginatedProducts = filteredProducts.slice(0, limit);
       initialData = {
@@ -217,6 +240,9 @@ export const render = async (
     };
   } catch (error) {
     console.error("❌ React SSR 에러:", error);
+    console.error("📍 에러 스택:", error instanceof Error ? error.stack : "No stack trace");
+    console.error("📍 URL:", url);
+    console.error("📍 Query:", query);
     // 에러 발생 시 기본 에러 페이지 반환
     return {
       head: "<title>에러 - 쇼핑몰</title>",
