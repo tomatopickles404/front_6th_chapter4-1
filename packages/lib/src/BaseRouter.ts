@@ -50,7 +50,8 @@ export abstract class BaseRouter<Handler extends AnyFunction> {
       })
       .replace(/\//g, "\\/");
 
-    const regex = new RegExp(`^${this.#baseUrl}${regexPath}$`);
+    // normalizedPath와 매칭하므로 baseUrl을 포함하지 않음
+    const regex = new RegExp(`^${regexPath}$`);
 
     this.#routes.set(path, {
       regex,
@@ -66,6 +67,7 @@ export abstract class BaseRouter<Handler extends AnyFunction> {
 
       for (const [routePath, route] of this.#routes) {
         const match = normalizedPath.match(route.regex);
+
         if (match) {
           const params: StringRecord = {};
           route.paramNames.forEach((name, index) => {
@@ -76,7 +78,8 @@ export abstract class BaseRouter<Handler extends AnyFunction> {
         }
       }
       return null;
-    } catch {
+    } catch (error) {
+      console.error("❌ findRoute 에러:", error);
       return null;
     }
   }

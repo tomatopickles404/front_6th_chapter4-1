@@ -15,9 +15,18 @@ const enableMocking = () =>
     }),
   );
 
-function main() {
+async function main() {
+  // CSR 환경에서 라우트 등록
+  const { HomePage, NotFoundPage, ProductDetailPage } = await import("./pages");
+  router.addRoute("/", HomePage);
+  router.addRoute("/product/:id/", ProductDetailPage);
+  router.addRoute(".*", NotFoundPage);
+
   // 클라이언트 사이드 라우터 시작
   router.start();
+
+  // 라우터 초기화 대기 (약간의 지연)
+  await new Promise((resolve) => setTimeout(resolve, 100));
 
   // CSR 모드 확인
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,7 +96,7 @@ function main() {
 // 애플리케이션 시작
 if (import.meta.env.MODE !== "test") {
   // 테스트 환경이 아닌 경우: MSW 활성화 후 앱 시작
-  enableMocking().then(main);
+  enableMocking().then(() => main());
 } else {
   // 테스트 환경: MSW 없이 바로 앱 시작
   main();
