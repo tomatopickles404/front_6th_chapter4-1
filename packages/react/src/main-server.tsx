@@ -1,6 +1,5 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { router } from "./router";
 import { HomePage, ProductDetailPage, NotFoundPage } from "./pages";
 import { productStore } from "./entities/products/productStore";
 import type { Product, Categories } from "./entities/products/types";
@@ -16,11 +15,6 @@ interface ProductData {
 interface ProductDetailData {
   currentProduct: Product;
   relatedProducts: Product[];
-}
-
-interface RouteParams {
-  id?: string;
-  [key: string]: string | undefined;
 }
 
 interface RenderResult {
@@ -95,64 +89,6 @@ function filterProducts(products: Product[], query: Record<string, string>): Pro
   return filtered;
 }
 
-/**
- * 홈페이지 라우트 - 상품 목록과 카테고리 표시
- */
-router.addRoute("/", () => {
-  const categories = getUniqueCategories();
-  const currentQuery = (router as { query: Record<string, string> }).query || {};
-  const filteredProducts = filterProducts(items, currentQuery);
-  const limit = 20;
-  const paginatedProducts = filteredProducts.slice(0, limit);
-
-  // 서버 상태 초기화
-  const productData: ProductData = {
-    products: paginatedProducts,
-    categories,
-    totalCount: filteredProducts.length,
-  };
-
-  // 스토어에 초기 데이터 설정
-  productStore.dispatch({
-    type: "products/setup",
-    payload: productData,
-  });
-
-  return renderToString(createElement(HomePage));
-});
-
-/**
- * 상품 상세 페이지 라우트 - 상품 정보와 관련 상품 표시
- */
-router.addRoute("/product/:id/", (params: RouteParams) => {
-  const product = getProductById(params.id || "");
-
-  // 존재하지 않는 상품인 경우
-  if (!product) {
-    return renderToString(createElement(NotFoundPage));
-  }
-
-  const relatedProducts = getRelatedProducts(product.category2, product.productId);
-
-  // 서버 상태 초기화
-  const productDetailData: ProductDetailData = {
-    currentProduct: product,
-    relatedProducts,
-  };
-
-  productStore.dispatch({
-    type: "products/setup",
-    payload: productDetailData,
-  });
-
-  return renderToString(createElement(ProductDetailPage));
-});
-
-/**
- * 404 페이지 - 모든 매칭되지 않은 경로
- */
-router.addRoute(".*", () => renderToString(createElement(NotFoundPage)));
-
 export const render = async (
   url: string,
   query: Record<string, string>,
@@ -197,15 +133,7 @@ export const render = async (
 
       console.log("✅ React SSR 완료:", normalizedUrl);
       return {
-        html: renderToString(
-          createElement(HomePage, {
-            searchQuery: processedQuery.search,
-            limit: processedQuery.limit,
-            sort: processedQuery.sort,
-            category1: processedQuery.category1,
-            category2: processedQuery.category2,
-          }),
-        ),
+        html: renderToString(createElement(HomePage)),
         head: "<title>쇼핑몰 - 홈</title>",
         initialData: productData,
         __INITIAL_DATA__: productData,

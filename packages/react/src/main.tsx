@@ -19,6 +19,11 @@ function main() {
   // 클라이언트 사이드 라우터 시작
   router.start();
 
+  // CSR 모드 확인
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isSSR = !!(window as any)?.__INITIAL_DATA__;
+  console.log(isSSR ? "🔄 CSR 하이드레이션 모드" : "🚀 CSR 초기 렌더링 모드");
+
   // SSR에서 전달된 초기 데이터 확인 (서버에서 미리 렌더링된 데이터)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const initialData = (window as any)?.__INITIAL_DATA__;
