@@ -77,6 +77,10 @@ function main() {
 
   // React 앱을 DOM에 마운트 (하이드레이션)
   const rootElement = document.getElementById("root")!;
+
+  // SSR 주석 제거 (CSR에서 문제 방지)
+  rootElement.innerHTML = "";
+
   createRoot(rootElement).render(<App />);
 }
 

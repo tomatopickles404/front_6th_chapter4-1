@@ -6,7 +6,7 @@ import { createServer } from "vite";
 
 const isProduction = process.env.NODE_ENV === "production";
 const port = process.env.PORT || 5174;
-const base = process.env.BASE || (isProduction ? "/front_6th_chapter4-1/react/" : "/");
+const base = isProduction ? "/front_6th_chapter4-1/react/" : "";
 
 let template;
 let render;
@@ -34,15 +34,6 @@ async function initializeProductionServer() {
   render = (await import("./dist/react-ssr/main-server.js")).render;
 
   console.log("✅ 프로덕션 서버 초기화 완료");
-}
-
-function normalizeUrl(originalUrl, basePath) {
-  if (originalUrl.startsWith(basePath)) {
-    const withoutBase = originalUrl.substring(basePath.length);
-    return withoutBase || "/";
-  }
-  // basePath로 시작하지 않는 경우 원본 URL 반환
-  return originalUrl.startsWith("/") ? originalUrl : "/" + originalUrl;
 }
 
 function createInitialDataScript(initialData) {
@@ -126,6 +117,20 @@ function setupMiddlewares() {
       })(req, res, next);
     });
 
+    // base URL 없이 요청되는 정적 파일들을 base URL로 리다이렉트
+    app.use((req, res, next) => {
+      const url = req.url || "";
+
+      // 정적 파일 요청이면서 base URL이 없는 경우
+      if (url.match(/\.(js|css|svg|png|jpg|jpeg|gif|ico|woff|woff2)$/)) {
+        const redirectUrl = base + url.substring(1); // 앞의 '/' 제거
+        console.log(`🔄 정적 파일 리다이렉트: ${url} → ${redirectUrl}`);
+        return res.redirect(302, redirectUrl);
+      }
+
+      next();
+    });
+
     console.log("🏗️ 프로덕션 미들웨어 설정 완료");
   }
 }
@@ -170,16 +175,23 @@ async function handleSSRRendering(req, res) {
     console.log("🚀 SSR 렌더링 시작:", normalizedUrl);
     const renderResult = await currentRender(normalizedUrl, req.query);
     console.log("✅ SSR 렌더링 완료:", {
+      mode: "SSR (Server-Side Rendering)",
       htmlLength: renderResult.html?.length || 0,
       hasInitialData: !!renderResult.__INITIAL_DATA__,
       head: renderResult.head,
+      timestamp: new Date().toISOString(),
+      userAgent: req.get("User-Agent")?.includes("Node") ? "Server" : "Browser",
     });
 
     // 템플릿에 렌더링 결과 주입
     const finalHtml = injectTemplate(currentTemplate, renderResult);
     console.log("📄 최종 HTML 생성 완료, 길이:", finalHtml.length);
 
-    res.status(200).set({ "Content-Type": "text/html" }).send(finalHtml);
+    // SSR 모드 확인을 위한 메타데이터 추가
+    const ssrMetaScript = `<script>console.log('🔍 렌더링 모드: SSR (Server-Side Rendering)'); console.log('📊 렌더링 정보:', { timestamp: new Date().toISOString(), url: '${normalizedUrl}', hasInitialData: ${!!renderResult.__INITIAL_DATA__} });</script>`;
+    const finalHtmlWithSSRInfo = finalHtml.replace("<!-- app-data -->", `<!-- app-data -->${ssrMetaScript}`);
+
+    res.status(200).set({ "Content-Type": "text/html" }).send(finalHtmlWithSSRInfo);
   } catch (error) {
     handleSSRError(error, res);
   }
@@ -199,6 +211,37 @@ function handleSSRError(error, res) {
 
 // ===== 미들웨어 등록 =====
 setupMiddlewares();
+
+// 루트 경로와 base URL 경로 모두 SSR 처리
+app.get("/", (req, res) => {
+  console.log("🏠 루트 경로 SSR 렌더링");
+  handleSSRRendering(req, res);
+});
+
+// base URL 경로 처리 (간단하고 안전한 방법)
+if (isProduction && base !== "/") {
+  // 정확한 base URL 경로 처리
+  app.get("/front_6th_chapter4-1/react", (req, res) => {
+    console.log(`🏠 Base URL 경로 SSR 렌더링: ${req.originalUrl}`);
+    handleSSRRendering(req, res);
+  });
+
+  app.get("/front_6th_chapter4-1/react/", (req, res) => {
+    console.log(`🏠 Base URL 경로 SSR 렌더링: ${req.originalUrl}`);
+    handleSSRRendering(req, res);
+  });
+
+  // 하위 경로들 (cart, products 등)
+  app.get("/front_6th_chapter4-1/react/cart", (req, res) => {
+    console.log(`🛒 Cart 페이지 SSR 렌더링: ${req.originalUrl}`);
+    handleSSRRendering(req, res);
+  });
+
+  app.get("/front_6th_chapter4-1/react/products/:id", (req, res) => {
+    console.log(`📦 Product 페이지 SSR 렌더링: ${req.originalUrl}`);
+    handleSSRRendering(req, res);
+  });
+}
 
 // HTML 페이지 요청을 SSR로 처리 (와일드카드 대신 catch-all 함수 사용)
 app.use((req, res, next) => {
@@ -223,3 +266,10 @@ function startServer() {
 
 // 서버 시작
 startServer();
+
+// URL 정규화 함수
+function normalizeUrl(originalUrl, basePath) {
+  const withoutBase = originalUrl.replace(basePath, "") || "/";
+  const withSlash = withoutBase.startsWith("/") ? withoutBase : "/" + withoutBase;
+  return withSlash.replace(/\/+/g, "/");
+}

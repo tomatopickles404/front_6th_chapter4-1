@@ -94,10 +94,19 @@ export const render = async (
   query: Record<string, string>,
 ): Promise<RenderResult & { __INITIAL_DATA__?: unknown }> => {
   try {
-    // URL 정규화
-    const normalizedUrl = url === "" ? "/" : url;
+    // URL 정규화 - 슬래시 정리
+    let normalizedUrl = url === "" ? "/" : url;
+    // 앞에 슬래시가 없으면 추가
+    if (!normalizedUrl.startsWith("/")) {
+      normalizedUrl = "/" + normalizedUrl;
+    }
+    // 끝에 슬래시가 있으면 제거 (홈페이지 제외)
+    if (normalizedUrl.endsWith("/") && normalizedUrl !== "/") {
+      normalizedUrl = normalizedUrl.slice(0, -1);
+    }
 
     const pathOnly = normalizedUrl.split("?")[0];
+    console.log("🔍 URL 처리:", { originalUrl: url, normalizedUrl, pathOnly });
     if (pathOnly === "/" || pathOnly === "") {
       // 홈페이지
       const categories = getUniqueCategories();
@@ -132,16 +141,29 @@ export const render = async (
       });
 
       console.log("✅ React SSR 완료:", normalizedUrl);
+      const html = renderToString(
+        createElement(HomePage, {
+          searchQuery: processedQuery.search,
+          limit: processedQuery.limit,
+          sort: processedQuery.sort,
+          category1: processedQuery.category1,
+          category2: processedQuery.category2,
+        }),
+      );
+      console.log("🔍 홈페이지 렌더링된 HTML 길이:", html.length);
       return {
-        html: renderToString(createElement(HomePage)),
+        html,
         head: "<title>쇼핑몰 - 홈</title>",
         initialData: productData,
         __INITIAL_DATA__: productData,
       };
     } else if (pathOnly.startsWith("/product/")) {
-      // 상품 상세 페이지
-      const productId = pathOnly.split("/")[2];
+      // 상품 상세 페이지 - 경로에서 productId 추출
+      const pathSegments = pathOnly.split("/").filter((segment) => segment);
+      const productId = pathSegments[1]; // /product/85067212996/ -> 85067212996
+      console.log("🔍 상품 상세 페이지 SSR:", { pathOnly, pathSegments, productId, url, query });
       const product = getProductById(productId);
+      console.log("🔍 상품 찾기 결과:", { productId, found: !!product, productTitle: product?.title });
 
       if (!product) {
         console.log("✅ React SSR 완료:", normalizedUrl);
@@ -167,8 +189,10 @@ export const render = async (
       });
 
       console.log("✅ React SSR 완료:", normalizedUrl);
+      const html = renderToString(createElement(ProductDetailPage));
+      console.log("🔍 렌더링된 HTML 길이:", html.length);
       return {
-        html: renderToString(createElement(ProductDetailPage)),
+        html,
         head: `<title>${product.title} - 쇼핑몰</title>`,
         initialData: productDetailData,
         __INITIAL_DATA__: productDetailData,

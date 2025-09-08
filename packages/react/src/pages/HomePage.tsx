@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type FC } from "react";
 import { loadNextProducts, loadProductsAndCategories, ProductList, SearchBar } from "../entities";
 import { PageWrapper } from "./PageWrapper";
 
@@ -34,7 +34,7 @@ interface HomePageProps {
   category2?: string;
 }
 
-export const HomePage = ({ searchQuery, limit, sort, category1, category2 }: HomePageProps = {}) => {
+export const HomePage: FC<HomePageProps> = ({ searchQuery, limit, sort, category1, category2 } = {}) => {
   useEffect(() => {
     registerScrollHandler();
     loadProductsAndCategories();
